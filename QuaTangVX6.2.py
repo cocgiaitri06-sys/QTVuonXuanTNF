@@ -16,6 +16,7 @@ FILE_PATH = {
     "trans": os.path.join(BASE_DIR, "nhatky_xuatnhap.csv"),
     "session": os.path.join(BASE_DIR, "user_session.txt")
 }
+ADMIN_PASSWORD = "2605"  # Thay đổi mật khẩu của bạn tại đây
 
 
 def init_csv():
@@ -26,7 +27,7 @@ def init_csv():
                               "GhiChu"]).to_csv(FILE_PATH["trans"], index=False, encoding='utf-8-sig')
 
 
-# --- 2. QUẢN LÝ PHIÊN ĐĂNG NHẬP ---
+# --- 2. QUẢN LÝ PHIÊN & BẢO MẬT ---
 def save_session(u_id, u_name):
     with open(FILE_PATH["session"], "w", encoding="utf-8") as f:
         f.write(f"{u_id}|{u_name}")
@@ -45,7 +46,7 @@ def clear_session():
         os.remove(FILE_PATH["session"])
 
 
-# --- 3. TIỆN ÍCH PDF & MÃ QUÀ ---
+# --- 3. TIỆN ÍCH PDF & LOGIC ---
 def no_accent_vietnamese(s):
     s = str(s)
     s = re.sub(r'[àáạảãâầấậẩẫăằắặẳẵ]', 'a', s);
@@ -69,9 +70,8 @@ def generate_new_gift_code():
     df_g = pd.read_csv(FILE_PATH["gifts"])
     if df_g.empty: return "QT0001"
     codes = [c for c in df_g['MaQua'].astype(str).tolist() if c.startswith("QT") and len(c) == 6]
-    if not codes: return "QT0001"
     nums = [int(c[2:]) for c in codes if c[2:].isdigit()]
-    return f"QT{(max(nums) + 1):04d}"
+    return f"QT{(max(nums) + 1):04d}" if nums else "QT0001"
 
 
 def get_current_stock(ma_qua):
@@ -131,149 +131,142 @@ if 'user_info' not in st.session_state:
             if st.button("ĐĂNG NHẬP", use_container_width=True, type="primary"):
                 if u_id and u_name:
                     st.session_state['user_info'] = {"id": u_id, "name": u_name}
-                    save_session(u_id, u_name)
+                    save_session(u_id, u_name);
                     st.rerun()
         st.stop()
 
+# --- SIDEBAR: THÔNG TIN & BACKUP/RESTORE ---
 with st.sidebar:
     st.write(f"👤: **{st.session_state['user_info']['name']}**")
     if st.button("Đăng xuất & Xóa nhớ"):
-        clear_session()
-        st.session_state.clear()
+        clear_session();
+        st.session_state.clear();
         st.rerun()
 
+    st.divider()
+    with st.expander("🛠️ QUẢN TRỊ DỮ LIỆU"):
+        pwd = st.text_input("Mật khẩu quản trị", type="password")
+        if pwd == ADMIN_PASSWORD:
+            st.success("Xác thực thành công!")
+            st.write("📤 **Sao lưu (Backup)**")
+            for key, path in FILE_PATH.items():
+                if key != "session" and os.path.exists(path):
+                    with open(path, "rb") as f:
+                        st.download_button(label=f"Tải {key.upper()}", data=f, file_name=f"{key}_backup.csv",
+                                           mime="text/csv", use_container_width=True, key=f"bk_{key}")
+
+            st.write("📥 **Phục hồi (Restore)**")
+            target = st.selectbox("Loại file", ["Danh mục quà", "Nhật ký"])
+            up_file = st.file_uploader("Chọn file CSV", type="csv")
+            if up_file and st.button("XÁC NHẬN GHI ĐÈ", type="primary", use_container_width=True):
+                try:
+                    df_up = pd.read_csv(up_file)
+                    dest = FILE_PATH["gifts"] if target == "Danh mục quà" else FILE_PATH["trans"]
+                    df_up.to_csv(dest, index=False, encoding='utf-8-sig')
+                    st.success("Đã phục hồi!");
+                    time.sleep(1);
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"Lỗi: {e}")
+        elif pwd != "":
+            st.error("Sai mật khẩu!")
+
+# --- TABS CHỨC NĂNG ---
 tabs = st.tabs(["📤 Xuất kho", "📥 Nhập kho", "📊 Báo cáo XNT", "📜 Nhật ký"])
 
 
 def render_form(type_f="XUẤT"):
     df_g = pd.read_csv(FILE_PATH["gifts"])
-
-    # Khởi tạo state để lưu trữ quà đang chọn
     if f"ma_{type_f}" not in st.session_state: st.session_state[f"ma_{type_f}"] = ""
     if f"ten_{type_f}" not in st.session_state: st.session_state[f"ten_{type_f}"] = ""
     if f"show_list_{type_f}" not in st.session_state: st.session_state[f"show_list_{type_f}"] = False
 
-    # 1. KHU VỰC TÌM KIẾM VÀ CHỌN NHANH
     st.markdown(f"🔍 **Tìm kiếm quà tặng ({type_f}):**")
-
-    col_search, col_list = st.columns([3, 1])
-    with col_search:
-        search_term = st.text_input("Nhập mã/tên...", key=f"search_{type_f}", label_visibility="collapsed",
-                                    placeholder="Gõ để tìm nhanh...")
-    with col_list:
-        if st.button("📋 Danh sách", key=f"btn_list_{type_f}", use_container_width=True):
+    c_srch, c_lst = st.columns([3, 1])
+    with c_srch:
+        search_term = st.text_input("Gõ mã/tên...", key=f"src_{type_f}", label_visibility="collapsed")
+    with c_lst:
+        if st.button("📋 Danh sách", key=f"l_{type_f}", use_container_width=True):
             st.session_state[f"show_list_{type_f}"] = not st.session_state[f"show_list_{type_f}"]
 
-    # HIỂN THỊ DANH SÁCH QUÀ TẶNG (Khi nhấn nút Danh sách)
     if st.session_state[f"show_list_{type_f}"]:
-        with st.expander("📂 Danh mục quà tặng đầy đủ", expanded=True):
-            if not df_g.empty:
-                # Tạo bảng có thêm cột nút bấm để chọn
-                for _, row in df_g.iterrows():
-                    c_info, c_btn = st.columns([4, 1])
-                    c_info.write(f"**{row['MaQua']}** - {row['TenQua']}")
-                    if c_btn.button("Chọn", key=f"sel_{type_f}_{row['MaQua']}", use_container_width=True):
-                        st.session_state[f"ma_{type_f}"] = row['MaQua']
-                        st.session_state[f"ten_{type_f}"] = row['TenQua']
-                        st.session_state[f"show_list_{type_f}"] = False  # Đóng danh sách sau khi chọn
-                        st.rerun()
-            else:
-                st.write("Danh mục trống.")
-
-    # 2. XỬ LÝ KẾT QUẢ TÌM KIẾM NHANH (Gõ phím)
-    if search_term and not st.session_state[f"show_list_{type_f}"]:
-        filtered = df_g[df_g['MaQua'].astype(str).str.contains(search_term, case=False) |
-                        df_g['TenQua'].str.contains(search_term, case=False)]
-
-        if not filtered.empty:
-            st.caption("Kết quả gợi ý:")
-            for _, row in filtered.head(3).iterrows():
-                if st.button(f"📍 {row['MaQua']} - {row['TenQua']}", key=f"btn_quick_{row['MaQua']}_{type_f}",
-                             use_container_width=True):
-                    st.session_state[f"ma_{type_f}"] = row['MaQua']
-                    st.session_state[f"ten_{type_f}"] = row['TenQua']
+        with st.expander("📂 Danh mục đầy đủ", expanded=True):
+            for _, row in df_g.iterrows():
+                ci, cb = st.columns([4, 1])
+                ci.write(f"**{row['MaQua']}** - {row['TenQua']}")
+                if cb.button("Chọn", key=f"s_{type_f}_{row['MaQua']}", use_container_width=True):
+                    st.session_state[f"ma_{type_f}"], st.session_state[f"ten_{type_f}"] = row['MaQua'], row['TenQua']
+                    st.session_state[f"show_list_{type_f}"] = False;
                     st.rerun()
-        elif type_f == "NHẬP":
+
+    if search_term and not st.session_state[f"show_list_{type_f}"]:
+        filtered = df_g[
+            df_g['MaQua'].astype(str).str.contains(search_term, case=False) | df_g['TenQua'].str.contains(search_term,
+                                                                                                          case=False)]
+        for _, row in filtered.head(3).iterrows():
+            if st.button(f"📍 {row['MaQua']} - {row['TenQua']}", key=f"q_{type_f}_{row['MaQua']}",
+                         use_container_width=True):
+                st.session_state[f"ma_{type_f}"], st.session_state[f"ten_{type_f}"] = row['MaQua'], row['TenQua'];
+                st.rerun()
+        if type_f == "NHẬP" and filtered.empty:
             if st.button(f"➕ Tạo quà mới: {search_term}", use_container_width=True):
-                st.session_state[f"ma_{type_f}"] = generate_new_gift_code()
-                st.session_state[f"ten_{type_f}"] = search_term
+                st.session_state[f"ma_{type_f}"], st.session_state[
+                    f"ten_{type_f}"] = generate_new_gift_code(), search_term;
                 st.rerun()
 
-    # 3. HIỂN THỊ TỒN KHO VÀ FORM CHI TIẾT
-    curr_ma = st.session_state[f"ma_{type_f}"]
-    curr_ten = st.session_state[f"ten_{type_f}"]
-
+    curr_ma, curr_ten = st.session_state[f"ma_{type_f}"], st.session_state[f"ten_{type_f}"]
     if curr_ma:
-        all_codes = df_g['MaQua'].astype(str).tolist()
-        is_new = curr_ma not in all_codes
-
-        # Hiển thị Tồn kho nổi bật
+        is_new = curr_ma not in df_g['MaQua'].astype(str).tolist()
         if not is_new:
             ton = get_current_stock(curr_ma)
             clr = "#28a745" if ton > 5 else "#dc3545"
-            st.markdown(f"""
-                <div style="background-color: {clr}15; padding: 12px; border-radius: 10px; border: 1px solid {clr}; text-align: center; margin: 10px 0;">
-                    <span style="color: {clr}; font-size: 16px;">Đang chọn: <b>{curr_ten}</b></span><br>
-                    <span style="color: {clr}; font-size: 20px;">📊 Tồn kho: <b>{ton}</b></span>
-                </div>
-            """, unsafe_allow_html=True)
+            st.markdown(
+                f"<div style='background:{clr}15;padding:10px;border-radius:10px;border:1px solid {clr};text-align:center;'><b>{curr_ten}</b><br>📊 Tồn kho: <b>{ton}</b></div>",
+                unsafe_allow_html=True)
 
         with st.container(border=True):
-            st.write(f"📝 **Phiếu {type_f}**")
             so_ct = st.text_input("Số chứng từ *", key=f"ct_{type_f}")
-
             c1, c2 = st.columns(2)
-            # Dùng key cố định cho widget hiển thị, lấy giá trị từ session_state
-            st.session_state[f"d_ma_{type_f}"] = curr_ma
-            st.session_state[f"d_ten_{type_f}"] = curr_ten
-
             with c1:
-                st.text_input("Mã Quà", key=f"d_ma_{type_f}", disabled=True)
+                st.text_input("Mã Quà", value=curr_ma, key=f"d_ma_{type_f}", disabled=True)
             with c2:
-                st.text_input("Tên Quà", key=f"d_ten_{type_f}", disabled=not is_new)
-
+                st.text_input("Tên Quà", value=curr_ten, key=f"d_ten_{type_f}", disabled=not is_new)
             sl = st.number_input("Số lượng *", min_value=1, step=1, key=f"sl_{type_f}")
             note = st.text_input("Ghi chú / Lý do", key=f"note_{type_f}")
 
             if st.button(f"💾 LƯU PHIẾU {type_f}", type="primary", use_container_width=True):
                 if so_ct and curr_ma and curr_ten:
                     df_t = pd.read_csv(FILE_PATH["trans"])
-                    new_t = {
-                        "Loai": type_f, "Ngay": date.today().strftime("%Y-%m-%d"),
-                        "Gio": datetime.now().strftime("%H:%M:%S"),
-                        "SoChungTu": so_ct, "MaQua": curr_ma, "TenQua": curr_ten,
-                        "SoLuong": sl if type_f == "NHẬP" else -sl,
-                        "NguoiThucHien": f"{st.session_state['user_info']['id']} - {st.session_state['user_info']['name']}",
-                        "GhiChu": note
-                    }
+                    new_t = {"Loai": type_f, "Ngay": date.today().strftime("%Y-%m-%d"),
+                             "Gio": datetime.now().strftime("%H:%M:%S"),
+                             "SoChungTu": so_ct, "MaQua": curr_ma, "TenQua": curr_ten,
+                             "SoLuong": sl if type_f == "NHẬP" else -sl,
+                             "NguoiThucHien": f"{st.session_state['user_info']['id']} - {st.session_state['user_info']['name']}",
+                             "GhiChu": note}
                     pd.concat([df_t, pd.DataFrame([new_t])], ignore_index=True).to_csv(FILE_PATH["trans"], index=False,
                                                                                        encoding='utf-8-sig')
-
                     if is_new:
                         df_g_now = pd.read_csv(FILE_PATH["gifts"])
                         pd.concat([df_g_now, pd.DataFrame([{"MaQua": curr_ma, "TenQua": curr_ten}])],
                                   ignore_index=True).to_csv(FILE_PATH["gifts"], index=False, encoding='utf-8-sig')
-
-                    st.success("✅ Thành công!");
+                    st.success("✅ Đã lưu!");
                     time.sleep(0.5)
-                    # Reset Form hoàn toàn
-                    for k in [f"search_{type_f}", f"ct_{type_f}", f"sl_{type_f}", f"note_{type_f}", f"ma_{type_f}",
-                              f"ten_{type_f}", f"d_ma_{type_f}", f"d_ten_{type_f}"]:
+                    for k in [f"src_{type_f}", f"ct_{type_f}", f"sl_{type_f}", f"note_{type_f}", f"ma_{type_f}",
+                              f"ten_{type_f}"]:
                         if k in st.session_state: del st.session_state[k]
                     st.rerun()
     else:
-        st.info("👆 Tìm kiếm hoặc bấm nút 'Danh sách' để chọn quà.")
+        st.info("👆 Tìm kiếm hoặc chọn từ Danh sách để bắt đầu.")
+
 
 with tabs[0]: render_form("XUẤT")
 with tabs[1]: render_form("NHẬP")
 
-# BÁO CÁO XNT (Giữ nguyên logic cũ đã ổn định)
 with tabs[2]:
     st.subheader("Báo cáo tồn kho")
     c1, c2 = st.columns(2)
-    d1 = c1.date_input("Từ ngày", date(date.today().year, date.today().month, 1), key="rep_d1")
-    d2 = c2.date_input("Đến ngày", date.today(), key="rep_d2")
-
+    d1, d2 = c1.date_input("Từ ngày", date(date.today().year, date.today().month, 1)), c2.date_input("Đến ngày",
+                                                                                                     date.today())
     if st.button("📊 Chạy báo cáo", use_container_width=True):
         df_t = pd.read_csv(FILE_PATH["trans"])
         if not df_t.empty:
@@ -290,18 +283,16 @@ with tabs[2]:
                         'SoLuong'].sum())
                 r_list.append(
                     {"Mã": m, "Tên": t, "Tồn đầu": t_dau, "Nhập": nhap, "Xuất": xuat, "Tồn cuối": t_dau + nhap - xuat})
-            st.session_state['report_final'] = pd.DataFrame(r_list)
-
-    if 'report_final' in st.session_state:
-        st.dataframe(st.session_state['report_final'], use_container_width=True, hide_index=True)
+            st.session_state['rep'] = pd.DataFrame(r_list)
+    if 'rep' in st.session_state:
+        st.dataframe(st.session_state['rep'], use_container_width=True, hide_index=True)
         ce, cp = st.columns(2)
         buf_ex = io.BytesIO()
-        with pd.ExcelWriter(buf_ex, engine='xlsxwriter') as wr: st.session_state['report_final'].to_excel(wr,
-                                                                                                          index=False)
+        with pd.ExcelWriter(buf_ex) as wr: st.session_state['rep'].to_excel(wr, index=False)
         ce.download_button("📥 Excel", buf_ex.getvalue(), "Bao_cao.xlsx", use_container_width=True)
-        pdf_bytes = export_pdf_reportlab(st.session_state['report_final'], f"{d1} - {d2}")
-        cp.download_button("📄 PDF", pdf_bytes, "Bao_cao.pdf", mime="application/pdf", use_container_width=True)
+        cp.download_button("📄 PDF", export_pdf_reportlab(st.session_state['rep'], f"{d1}-{d2}"), "Bao_cao.pdf",
+                           use_container_width=True)
 
 with tabs[3]:
-    st.subheader("Lịch sử giao dịch")
+    st.subheader("Lịch sử")
     st.dataframe(pd.read_csv(FILE_PATH["trans"]).iloc[::-1], use_container_width=True, hide_index=True)
