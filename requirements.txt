@@ -2,4 +2,3 @@ streamlit
 pandas
 xlsxwriter
 fpdf2
-st-gsheets-connection
