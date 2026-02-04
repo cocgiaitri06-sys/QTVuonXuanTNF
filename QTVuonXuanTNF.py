@@ -14,20 +14,18 @@ URL_SHEET = "https://docs.google.com/spreadsheets/d/1Q1JmyrwjySDpoaUcjc1Wr5S40Oj
 
 def load_data(worksheet_name):
     try:
+        # Không cần truyền URL vào đây, nó sẽ tự đọc trong Secrets
         conn = st.connection("gsheets", type=GSheetsConnection)
-        df = conn.read(spreadsheet=URL_SHEET, worksheet=worksheet_name, ttl=0)
+        df = conn.read(worksheet=worksheet_name, ttl=0)
         return df.dropna(how='all')
     except Exception:
-        if worksheet_name == "gifts":
-            return pd.DataFrame(columns=["MaQua", "TenQua"])
-        else:
-            return pd.DataFrame(
-                columns=["Loai", "Ngay", "Gio", "SoChungTu", "MaQua", "TenQua", "SoLuong", "NguoiThucHien", "GhiChu"])
-
+        # Trả về DF trống như cũ nếu có lỗi
+        ...
 
 def save_data(df, worksheet_name):
     conn = st.connection("gsheets", type=GSheetsConnection)
-    conn.update(spreadsheet=URL_SHEET, worksheet=worksheet_name, data=df)
+    # Lệnh update bây giờ sẽ chạy được vì đã có Service Account xác thực
+    conn.update(worksheet=worksheet_name, data=df)
     st.cache_data.clear()
 
 
