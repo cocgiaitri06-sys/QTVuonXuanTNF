@@ -69,7 +69,10 @@ def export_pdf(df):
         pdf.cell(widths[4], 8, str(row['Xuất']), border=1, align='C')
         pdf.cell(widths[5], 8, str(row['Tồn cuối']), border=1, align='C')
         pdf.ln()
-    return pdf.output(dest='S').encode('latin1', errors='replace')
+        pdf_output = pdf.output()
+        if isinstance(pdf_output, str):
+            return pdf_output.encode('latin1', errors='replace')
+        return bytes(pdf_output)
 
 
 # --- 2. GIAO DIỆN & LOGIN ---
