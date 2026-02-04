@@ -224,4 +224,8 @@ with tabs[2]:
 
 with tabs[3]:
     st.subheader("Nhật ký chi tiết")
-    st.dataframe(pd.read_csv(FILE_PATH["trans"]).iloc[::-1], use_container_width=True, hide_index=True)
+    # Sử dụng biến df_trans đã được load từ Google Sheets ở đầu chương trình
+    if not df_trans.empty:
+        st.dataframe(df_trans.iloc[::-1], use_container_width=True, hide_index=True)
+    else:
+        st.info("Chưa có dữ liệu nhật ký.")
