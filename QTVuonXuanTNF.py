@@ -9,7 +9,7 @@ from fpdf import FPDF
 
 # --- 1. CẤU HÌNH KẾT NỐI GOOGLE SHEETS ---
 # Thay link Google Sheets của bạn vào đây (Phải để chế độ Anyone with the link can edit)
-URL_SHEET = "https://docs.google.com/spreadsheets/d/YOUR_SHEET_ID_HERE/edit?usp=sharing"
+URL_SHEET = "https://docs.google.com/spreadsheets/d/1Q1JmyrwjySDpoaUcjc1Wr5S40Oju9lHGK_Q9rv58KAg/edit?usp=sharing"
 
 
 def load_data(worksheet_name):
