@@ -112,7 +112,7 @@ def export_pdf_reportlab(df, date_range):
 
 
 # --- 2. GIAO DIỆN ---
-st.set_page_config(page_title="Kho TNF - ReportLab Edition", layout="wide")
+st.set_page_config(page_title="Quà Tặng Vườn Xuân TNF", layout="wide")
 init_csv()
 
 if 'user_info' not in st.session_state:
