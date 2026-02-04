@@ -13,9 +13,16 @@ URL_SHEET = "https://docs.google.com/spreadsheets/d/1Q1JmyrwjySDpoaUcjc1Wr5S40Oj
 
 
 def load_data(worksheet_name):
-    conn = st.connection("gsheets", type=GSheetsConnection)
-    return conn.read(spreadsheet=URL_SHEET, worksheet=worksheet_name, ttl=0)
-
+    try:
+        conn = st.connection("gsheets", type=GSheetsConnection)
+        df = conn.read(spreadsheet=URL_SHEET, worksheet=worksheet_name, ttl=0)
+        return df.dropna(how='all') # Loại bỏ dòng trống nếu có
+    except Exception as e:
+        # Nếu chưa có dữ liệu hoặc lỗi, trả về DataFrame trống đúng cấu trúc
+        if worksheet_name == "gifts":
+            return pd.DataFrame(columns=["MaQua", "TenQua"])
+        else:
+            return pd.DataFrame(columns=["Loai", "Ngay", "Gio", "SoChungTu", "MaQua", "TenQua", "SoLuong", "NguoiThucHien", "GhiChu"])
 
 def save_data(df, worksheet_name):
     conn = st.connection("gsheets", type=GSheetsConnection)
