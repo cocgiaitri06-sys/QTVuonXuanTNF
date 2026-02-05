@@ -158,15 +158,14 @@ with st.sidebar:
         st.rerun()
     st.divider()
 
-    # --- PHẦN QUẢN TRỊ ---
     with st.expander("🛠️ QUẢN TRỊ"):
         pwd = st.text_input("Mật khẩu Admin", type="password")
         if pwd == ADMIN_PASSWORD:
             dg = load_data_from_gsheet("danhmuc_qua", CREDS_DATA)
             dt = load_data_from_gsheet("nhatky_xuatnhap", CREDS_DATA)
 
-            # 1. Sao lưu
-            st.write("📂 **Dữ liệu hệ thống**")
+            # --- BACKUP ---
+            st.write("📂 **Sao lưu dữ liệu**")
             buf = io.BytesIO()
             with pd.ExcelWriter(buf) as wr:
                 dg.to_excel(wr, sheet_name='DM', index=False);
@@ -175,28 +174,46 @@ with st.sidebar:
 
             st.divider()
 
-            # 2. Reset Database
+            # --- RESTORE ---
+            st.write("📥 **Khôi phục dữ liệu**")
+            uploaded_file = st.file_uploader("Chọn file backup (.xlsx)", type="xlsx")
+            if uploaded_file:
+                if st.button("🔄 BẮT ĐẦU RESTORE", use_container_width=True):
+                    try:
+                        ex = pd.ExcelFile(uploaded_file)
+                        if 'DM' in ex.sheet_names and 'NK' in ex.sheet_names:
+                            df_dm_new = pd.read_excel(uploaded_file, sheet_name='DM')
+                            df_nk_new = pd.read_excel(uploaded_file, sheet_name='NK')
+
+                            save_data_to_gsheet(df_dm_new, "danhmuc_qua", CREDS_DATA)
+                            save_data_to_gsheet(df_nk_new, "nhatky_xuatnhap", CREDS_DATA)
+
+                            st.success("✅ Khôi phục thành công!")
+                            time.sleep(1);
+                            st.rerun()
+                        else:
+                            st.error("❌ File không đúng định dạng (Thiếu sheet DM hoặc NK)")
+                    except Exception as e:
+                        st.error(f"❌ Lỗi: {str(e)}")
+
+            st.divider()
+
+            # --- RESET ---
             st.warning("⚠️ **Vùng nguy hiểm**")
-            confirm_reset = st.checkbox("Tôi xác nhận muốn xóa TOÀN BỘ dữ liệu")
+            confirm_reset = st.checkbox("Xác nhận xóa TOÀN BỘ dữ liệu")
             if confirm_reset:
                 if st.button("🔥 RESET DATABASE", type="primary", use_container_width=True):
-                    # Xóa danh mục quà (giữ lại header)
-                    empty_dg = pd.DataFrame(columns=["MaQua", "TenQua"])
-                    # Xóa nhật ký (giữ lại header)
-                    empty_dt = pd.DataFrame(
-                        columns=["Loai", "Ngay", "MaQua", "TenQua", "SoLuong", "SoChungTu", "NguoiThucHien", "GhiChu"])
-
-                    save_data_to_gsheet(empty_dg, "danhmuc_qua", CREDS_DATA)
-                    save_data_to_gsheet(empty_dt, "nhatky_xuatnhap", CREDS_DATA)
-
-                    st.success("✅ Đã reset toàn bộ dữ liệu!")
-                    time.sleep(2)
+                    save_data_to_gsheet(pd.DataFrame(columns=["MaQua", "TenQua"]), "danhmuc_qua", CREDS_DATA)
+                    save_data_to_gsheet(pd.DataFrame(
+                        columns=["Loai", "Ngay", "MaQua", "TenQua", "SoLuong", "SoChungTu", "NguoiThucHien", "GhiChu"]),
+                                        "nhatky_xuatnhap", CREDS_DATA)
+                    st.success("✅ Đã làm sạch dữ liệu!");
+                    time.sleep(1);
                     st.rerun()
 
 tabs = st.tabs(["📤 Xuất kho", "📥 Nhập kho", "📊 Báo cáo XNT", "📜 Nhật ký"])
 
 
-# --- RENDER CÁC TAB (GIỮ NGUYÊN NHƯ BẢN TRƯỚC) ---
 def render_form(type_f="XUẤT"):
     df_g = load_data_from_gsheet("danhmuc_qua", CREDS_DATA)
     if f"ma_{type_f}" not in st.session_state: st.session_state[f"ma_{type_f}"] = ""
@@ -214,7 +231,7 @@ def render_form(type_f="XUẤT"):
     if st.session_state[f"show_list_{type_f}"]:
         with st.expander("📂 Danh mục quà tặng", expanded=True):
             if df_g.empty:
-                st.write("Danh mục hiện tại đang trống.")
+                st.write("Trống.")
             else:
                 for i, r in df_g.iterrows():
                     ci, cb = st.columns([4, 1])
@@ -238,7 +255,7 @@ def render_form(type_f="XUẤT"):
                     f"ten_{type_f}"] = generate_new_gift_code(), search_term;
                 st.rerun()
         else:
-            st.error("❌ Không tìm thấy quà!")
+            st.error("❌ Không tìm thấy!")
 
     m, t = st.session_state[f"ma_{type_f}"], st.session_state[f"ten_{type_f}"]
     if m:
@@ -262,7 +279,7 @@ def render_form(type_f="XUẤT"):
                         save_data_to_gsheet(
                             pd.concat([dg_now, pd.DataFrame([{"MaQua": m, "TenQua": t}])], ignore_index=True),
                             "danhmuc_qua", CREDS_DATA)
-                    st.success("✅ Giao dịch thành công!");
+                    st.success("✅ Thành công!");
                     time.sleep(1);
                     st.session_state[f"ma_{type_f}"] = "";
                     st.rerun()
