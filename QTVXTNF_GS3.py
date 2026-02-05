@@ -9,7 +9,6 @@ import time
 import re
 from reportlab.lib.pagesizes import A4
 from reportlab.pdfgen import canvas
-from reportlab.lib import colors
 
 # --- 1. CẤU HÌNH HỆ THỐNG ---
 SHEET_ID = "1Q1JmyrwjySDpoaUcjc1Wr5S40Oju9lHGK_Q9rv58KAg"
@@ -19,46 +18,32 @@ SCOPE = ["https://www.googleapis.com/auth/spreadsheets"]
 st.set_page_config(page_title="Kho Quà Vườn Xuân TNF", layout="wide")
 
 
-# --- 2. QUẢN LÝ ĐĂNG NHẬP (COOKIE) ---
+# --- 2. QUẢN LÝ KẾT NỐI GOOGLE SHEETS (FIX WARNING) ---
+
 @st.cache_resource
-def get_cookie_manager():
-    return stx.CookieManager()
+def get_gsheet_client(creds_dict):
+    """Hàm này chỉ nhận dict dữ liệu, không gọi lệnh widget/secrets bên trong"""
+    creds = Credentials.from_service_account_info(creds_dict, scopes=SCOPE)
+    return gspread.authorize(creds)
 
 
-cookie_manager = get_cookie_manager()
-
-
-def check_login():
-    if 'user_info' in st.session_state:
-        return True
-    # Thử lấy từ Cookie trình duyệt
-    saved_user = cookie_manager.get(cookie="saved_user_tnf")
-    if saved_user and isinstance(saved_user, dict):
-        st.session_state['user_info'] = saved_user
-        return True
-    return False
-
-
-# --- 3. KẾT NỐI GOOGLE SHEETS ---
-@st.cache_resource
-def get_gsheet_client():
-    # Ưu tiên đọc từ Secrets (Cloud), nếu không thấy thì đọc file nội bộ (Local)
-    try:
-        if "gcp_service_account" in st.secrets:
-            creds_info = st.secrets["gcp_service_account"]
-            creds = Credentials.from_service_account_info(creds_info, scopes=SCOPE)
-        else:
-            creds = Credentials.from_service_account_file("credentials.json", scopes=SCOPE)
-        return gspread.authorize(creds)
-    except Exception as e:
-        st.error(f"Lỗi kết nối Google: {e}")
-        return None
+def get_creds_provider():
+    """Hàm hỗ trợ lấy credentials từ Cloud Secrets hoặc File Local"""
+    if "gcp_service_account" in st.secrets:
+        return dict(st.secrets["gcp_service_account"])
+    else:
+        import json
+        with open("credentials.json") as f:
+            return json.load(f)
 
 
 @st.cache_data(ttl=15)
 def load_data_from_gsheet(sheet_name):
     try:
-        client = get_gsheet_client()
+        # Lấy thông tin xác thực bên ngoài hàm cache resource
+        creds_provider = get_creds_provider()
+        client = get_gsheet_client(creds_provider)
+
         sh = client.open_by_key(SHEET_ID)
         worksheet = sh.worksheet(sheet_name)
         data = worksheet.get_all_values()
@@ -85,13 +70,33 @@ def load_data_from_gsheet(sheet_name):
 
 
 def save_data_to_gsheet(df, sheet_name):
-    client = get_gsheet_client()
+    creds_provider = get_creds_provider()
+    client = get_gsheet_client(creds_provider)
     sh = client.open_by_key(SHEET_ID)
     worksheet = sh.worksheet(sheet_name)
     df_save = df.reset_index(drop=True).astype(str)
     worksheet.clear()
     worksheet.update([df_save.columns.values.tolist()] + df_save.values.tolist())
     st.cache_data.clear()
+
+
+# --- 3. QUẢN LÝ ĐĂNG NHẬP (COOKIE) ---
+@st.cache_resource
+def get_cookie_manager():
+    return stx.CookieManager()
+
+
+cookie_manager = get_cookie_manager()
+
+
+def check_login():
+    if 'user_info' in st.session_state:
+        return True
+    saved_user = cookie_manager.get(cookie="saved_user_tnf")
+    if saved_user and isinstance(saved_user, dict):
+        st.session_state['user_info'] = saved_user
+        return True
+    return False
 
 
 # --- 4. HÀM TIỆN ÍCH ---
@@ -122,7 +127,7 @@ def get_current_stock(ma_qua):
 
 # --- 5. GIAO DIỆN ĐĂNG NHẬP ---
 if not check_login():
-    st.markdown("<h2 style='text-align: center;'>🌸 Kho Quà Vườn Xuân TNF</h2>", unsafe_allow_html=True)
+    st.markdown("<h2 style='text-align: center; color: #e67e22;'>🌸 Kho Quà Vườn Xuân TNF</h2>", unsafe_allow_html=True)
     with st.container(border=True):
         u_id = st.text_input("Mã nhân viên")
         u_name = st.text_input("Họ và tên")
@@ -138,7 +143,7 @@ if not check_login():
 with st.sidebar:
     st.subheader("🌸 Vườn Xuân TNF")
     st.write(f"Chào: **{st.session_state['user_info']['name']}**")
-    if st.button("Đăng xuất"):
+    if st.button("Đăng xuất", use_container_width=True):
         cookie_manager.delete("saved_user_tnf")
         st.session_state.clear()
         st.rerun()
@@ -179,15 +184,15 @@ def render_form(type_f="XUẤT"):
                     f"ten_{type_f}"] = generate_new_gift_code(), search_term;
                 st.rerun()
         else:
-            st.error("❌ Không tìm thấy quà tặng này trong kho!")
+            st.error("❌ Không tìm thấy quà tặng này trong danh mục!")
 
     curr_ma, curr_ten = st.session_state[f"ma_{type_f}"], st.session_state[f"ten_{type_f}"]
     if curr_ma:
         is_new = curr_ma not in df_g['MaQua'].tolist()
         ton = get_current_stock(curr_ma) if not is_new else 0
-        st.info(f"🎁 {curr_ten} ({curr_ma}) | 📊 Tồn: {ton}")
+        st.success(f"Đang chọn: **{curr_ten}** ({curr_ma}) | 📊 Tồn: **{ton}**")
 
-        with st.form(f"form_{type_f}"):
+        with st.form(f"form_{type_f}", clear_on_submit=True):
             so_ct = st.text_input("Số chứng từ *")
             sl = st.number_input("Số lượng *", min_value=1, step=1)
             note = st.text_input("Ghi chú")
@@ -205,9 +210,9 @@ def render_form(type_f="XUẤT"):
                         save_data_to_gsheet(pd.concat(
                             [df_g_now.reset_index(drop=True), pd.DataFrame([{"MaQua": curr_ma, "TenQua": curr_ten}])],
                             ignore_index=True), "danhmuc_qua")
-                    st.success("✅ Đã lưu thành công!");
+                    st.success("✅ Đã ghi nhận thành công!");
                     time.sleep(1)
-                    st.session_state[f"ma_{type_f}"] = "";
+                    st.session_state[f"ma_{type_f}"] = ""
                     st.rerun()
 
 
@@ -215,11 +220,11 @@ with tabs[0]: render_form("XUẤT")
 with tabs[1]: render_form("NHẬP")
 
 with tabs[2]:
-    st.subheader("📊 Báo cáo Xuất - Nhập - Tồn")
+    st.subheader("📊 Báo cáo tồn kho định kỳ")
     c1, c2 = st.columns(2)
-    d1 = c1.date_input("Từ ngày", date(date.today().year, date.today().month, 1), key="d1")
-    d2 = c2.date_input("Đến ngày", date.today(), key="d2")
-    if st.button("Chạy báo cáo", type="primary", use_container_width=True):
+    d1 = c1.date_input("Từ ngày", date(date.today().year, date.today().month, 1))
+    d2 = c2.date_input("Đến ngày", date.today())
+    if st.button("Trích xuất dữ liệu", type="primary", use_container_width=True):
         df_t, df_g = load_data_from_gsheet("nhatky_xuatnhap"), load_data_from_gsheet("danhmuc_qua")
         if not df_t.empty:
             df_t['Ngay'] = pd.to_datetime(df_t['Ngay']).dt.date
@@ -242,8 +247,8 @@ with tabs[2]:
         st.dataframe(st.session_state['report_df'], use_container_width=True, hide_index=True)
         buf = io.BytesIO()
         with pd.ExcelWriter(buf) as wr: st.session_state['report_df'].to_excel(wr, index=False)
-        st.download_button("📥 Tải file Báo cáo (Excel)", buf.getvalue(), "bao_cao_XNT.xlsx")
+        st.download_button("📥 Tải báo cáo Excel", buf.getvalue(), f"XNT_{d1}_{d2}.xlsx")
 
 with tabs[3]:
-    st.subheader("📜 Nhật ký xuất nhập")
+    st.subheader("📜 Lịch sử giao dịch")
     st.dataframe(load_data_from_gsheet("nhatky_xuatnhap").iloc[::-1], use_container_width=True, hide_index=True)
