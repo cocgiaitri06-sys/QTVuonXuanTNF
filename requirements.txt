@@ -1,5 +1,6 @@
 streamlit
 pandas
-xlsxwriter
-fpdf2
+gspread
+google-auth
 reportlab
+xlsxwriter
