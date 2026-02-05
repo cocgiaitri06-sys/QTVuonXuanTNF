@@ -17,7 +17,7 @@ SCOPE = ["https://www.googleapis.com/auth/spreadsheets"]
 
 st.set_page_config(page_title="Kho Quà Vườn Xuân TNF", layout="wide")
 
-# --- 2. XỬ LÝ CREDENTIALS (NGOÀI CACHE) ---
+# --- 2. XỬ LÝ CREDENTIALS (TRÁNH LỖI CACHE) ---
 if "gcp_service_account" in st.secrets:
     CREDS_DATA = dict(st.secrets["gcp_service_account"])
 else:
@@ -31,7 +31,7 @@ else:
         st.stop()
 
 
-# --- 3. QUẢN LÝ KẾT NỐI (SỬA LỖI CACHE) ---
+# --- 3. QUẢN LÝ KẾT NỐI ---
 @st.cache_resource
 def get_gsheet_client(creds_info):
     creds = Credentials.from_service_account_info(creds_info, scopes=SCOPE)
@@ -64,7 +64,7 @@ def save_data_to_gsheet(df, sheet_name, creds_info):
     st.cache_data.clear()
 
 
-# --- 4. QUẢN LÝ ĐĂNG NHẬP (KHÔNG CACHE COOKIE) ---
+# --- 4. QUẢN LÝ ĐĂNG NHẬP (COOKIE) ---
 def get_cookie_manager():
     return stx.CookieManager()
 
@@ -142,7 +142,7 @@ if not check_login():
         u_name = st.text_input("Họ và tên", key="l_name")
         if st.button("ĐĂNG NHẬP", use_container_width=True, type="primary"):
             if u_id and u_name:
-                u_data = {"id": u_id, "name": u_name}
+                u_data = {"id": str(u_id).strip(), "name": str(u_name).strip()}
                 st.session_state['user_info'] = u_data
                 cookie_manager.set("saved_user_tnf", u_data, expires_at=datetime.now() + timedelta(days=30))
                 st.rerun()
@@ -151,7 +151,8 @@ if not check_login():
 # --- 7. GIAO DIỆN CHÍNH ---
 with st.sidebar:
     st.subheader("🌸 Vườn Xuân TNF")
-    st.write(f"Chào: **{st.session_state['user_info']['name']}**")
+    # Hiển thị Tên và Mã NV trên Sidebar
+    st.info(f"👤 **{st.session_state['user_info']['name']}**\n\n🆔 Mã NV: **{st.session_state['user_info']['id']}**")
     if st.button("Đăng xuất", use_container_width=True):
         cookie_manager.delete("saved_user_tnf");
         st.session_state.clear();
@@ -187,13 +188,16 @@ def render_form(type_f="XUẤT"):
 
     if st.session_state[f"show_list_{type_f}"]:
         with st.expander("📂 Danh mục quà tặng", expanded=True):
-            for i, r in df_g.iterrows():
-                ci, cb = st.columns([4, 1])
-                ci.write(f"**{r['MaQua']}** - {r['TenQua']}")
-                if cb.button("Chọn", key=f"sel_{type_f}_{i}"):
-                    st.session_state[f"ma_{type_f}"], st.session_state[f"ten_{type_f}"] = r['MaQua'], r['TenQua']
-                    st.session_state[f"show_list_{type_f}"] = False;
-                    st.rerun()
+            if df_g.empty:
+                st.warning("Danh mục trống")
+            else:
+                for i, r in df_g.iterrows():
+                    ci, cb = st.columns([4, 1])
+                    ci.write(f"**{r['MaQua']}** - {r['TenQua']}")
+                    if cb.button("Chọn", key=f"sel_{type_f}_{i}"):
+                        st.session_state[f"ma_{type_f}"], st.session_state[f"ten_{type_f}"] = r['MaQua'], r['TenQua']
+                        st.session_state[f"show_list_{type_f}"] = False;
+                        st.rerun()
 
     if search_term and not st.session_state[f"show_list_{type_f}"]:
         f = df_g[
@@ -221,10 +225,19 @@ def render_form(type_f="XUẤT"):
             note = st.text_input("Ghi chú")
             if st.form_submit_button(f"XÁC NHẬN {type_f}", use_container_width=True):
                 if so_ct:
+                    # TẠO CHUỖI TÊN + MÃ NHÂN VIÊN
+                    user_info = f"{st.session_state['user_info']['name']} ({st.session_state['user_info']['id']})"
+
                     df_t = load_data_from_gsheet("nhatky_xuatnhap", CREDS_DATA)
-                    new_r = {"Loai": type_f, "Ngay": date.today().strftime("%Y-%m-%d"), "MaQua": m, "TenQua": t,
-                             "SoLuong": sl if type_f == "NHẬP" else -sl, "SoChungTu": so_ct,
-                             "NguoiThucHien": st.session_state['user_info']['name'], "GhiChu": note}
+                    new_r = {
+                        "Loai": type_f,
+                        "Ngay": date.today().strftime("%Y-%m-%d"),
+                        "MaQua": m, "TenQua": t,
+                        "SoLuong": sl if type_f == "NHẬP" else -sl,
+                        "SoChungTu": so_ct,
+                        "NguoiThucHien": user_info,  # Lưu cả Tên và Mã
+                        "GhiChu": note
+                    }
                     save_data_to_gsheet(pd.concat([df_t, pd.DataFrame([new_r])], ignore_index=True), "nhatky_xuatnhap",
                                         CREDS_DATA)
                     if m not in df_g['MaQua'].values:
@@ -232,7 +245,7 @@ def render_form(type_f="XUẤT"):
                         save_data_to_gsheet(
                             pd.concat([dg_now, pd.DataFrame([{"MaQua": m, "TenQua": t}])], ignore_index=True),
                             "danhmuc_qua", CREDS_DATA)
-                    st.success("✅ Thành công!");
+                    st.success("✅ Giao dịch thành công!");
                     time.sleep(1);
                     st.session_state[f"ma_{type_f}"] = "";
                     st.rerun()
@@ -271,10 +284,10 @@ with tabs[2]:
         cx, cp = st.columns(2)
         buf_ex = io.BytesIO()
         with pd.ExcelWriter(buf_ex) as wr: df_rep.to_excel(wr, index=False)
-        cx.download_button("📥 Xuất Excel", buf_ex.getvalue(), "bao_cao.xlsx", use_container_width=True)
-        cp.download_button("📥 Xuất PDF", export_pdf_report(df_rep, d1, d2), "bao_cao.pdf", use_container_width=True)
+        cx.download_button("📥 Xuất Excel", buf_ex.getvalue(), "bao_cao_XNT.xlsx", use_container_width=True)
+        cp.download_button("📥 Xuất PDF", export_pdf_report(df_rep, d1, d2), "bao_cao_XNT.pdf", use_container_width=True)
 
 with tabs[3]:
-    st.subheader("📜 Nhật ký")
+    st.subheader("📜 Nhật ký giao dịch")
     df_nk = load_data_from_gsheet("nhatky_xuatnhap", CREDS_DATA)
     if not df_nk.empty: st.dataframe(df_nk.iloc[::-1], use_container_width=True, hide_index=True)
