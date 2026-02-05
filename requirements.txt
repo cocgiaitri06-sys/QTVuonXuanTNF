@@ -5,3 +5,4 @@ google-auth
 reportlab
 xlsxwriter
 extra-streamlit-components
+openpyxl
